@@ -8,7 +8,7 @@ ShopVista's order, shipment, return, and dimension data (customers, products, ca
 
 ## Architecture
 
-![Pipeline Architecture](../architecture/pipeline_architecture.png)
+<img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/e43638a3-cf4f-4b86-87cf-ce4ab27fb86f" />
 
 Raw CSVs land in Azure Data Lake Storage Gen2, get picked up by Databricks Auto Loader, and move through three governed layers under Unity Catalog before reaching Power BI.
 
@@ -31,6 +31,9 @@ Raw CSVs land in Azure Data Lake Storage Gen2, get picked up by Databricks Auto 
 4. **Gold** — Silver tables are joined and enriched into star-schema fact and dimension tables: products are joined to brands and categories, customers are mapped to region via a country→state→region lookup, and the order-items fact table is enriched with calculated fields (gross amount, discount amount, net amount, coupon flag) using Delta's change data feed to process only inserts/updates. A rolling 30-day daily summary table sits on top for fast dashboard queries.
 5. **Serving** — Power BI connects directly to the Gold layer for sales, revenue trend, and returns reporting.
 
+ 
+<img width="1616" height="973" alt="Image" src="https://github.com/user-attachments/assets/7d81b27c-6006-4fa3-9ae4-cab170043d1d" /> 
+
 ## Key Engineering Decisions
 
 - **Auto Loader + `trigger(availableNow=True)`** instead of a fully continuous stream — this is a daily-batch workload, not a low-latency one, so incremental batch processing gives the reliability of streaming (checkpointing, exactly-once semantics) without paying for always-on compute.
@@ -39,23 +42,17 @@ Raw CSVs land in Azure Data Lake Storage Gen2, get picked up by Databricks Auto 
 - **Medallion architecture with Unity Catalog schemas per layer** (`bronze` / `silver` / `gold`) rather than separate catalogs, so access policies and lineage stay simple to reason about.
 - **Rolling 30-day summary table with merge-on-date** — recomputing the full history on every run doesn't scale, so the daily summary job only touches the last 30 days and merges by `date_id + currency`.
 
-## Good to Know
 
-**What I actually built**
+## What I actually built
 - The full Bronze → Silver → Gold pipeline for all fact and dimension entities, using Auto Loader, Structured Streaming with `foreachBatch` upserts, and Delta MERGE.
 - Data quality logic: null handling, deduplication, unit/format normalization, categorical standardization, negative-value correction.
 - Star-schema Gold tables (products joined to brand/category, customers joined to region) and a rolling daily summary aggregate table.
 - Unity Catalog setup: catalog, schemas, and an external volume backed by ADLS.
 
-**What I understand but didn't implement here**
-- *Row-level/column-level security in Unity Catalog:* "I'd apply row filters and column masks at the Unity Catalog table level so different business units only see the regions or fields they're cleared for, without duplicating tables."
-- *CI/CD for notebook deployment:* "I'd use Databricks Asset Bundles with a GitHub Actions pipeline to promote notebooks from dev to prod workspaces instead of manually running them."
-- *Data quality alerting:* "I'd wire up expectations (e.g., via Delta Live Tables or a custom check step) that fail the job or fire a Slack alert when null rates or row counts drift outside expected bounds, rather than relying on manual spot checks."
-- *Full historical backfill automation:* "For a production system I'd parameterize the ingestion notebooks to backfill any date range on demand, rather than relying on `includeExistingFiles` picking up whatever's currently in the landing zone."
 
 ## Dashboard
 
-![ShopVista Retail Intelligence Dashboard](../dashboard/ShopVista_dashboard.png)
+<img width="1616" height="973" alt="Image" src="https://github.com/user-attachments/assets/7d81b27c-6006-4fa3-9ae4-cab170043d1d" /> 
 
 Power BI dashboard surfacing total sales, repeat customer rate, sales by brand/category, customer distribution by region, channel split, and monthly revenue trend.
 
