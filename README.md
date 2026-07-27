@@ -1,329 +1,62 @@
-# ShopVista-Retail-Intelligence-End-to-End-Data-Pipeline [Data Engineering using Spark & Azure Databricks]
+# ShopVista Data Modernization Platform
 
-Reduced reporting complexity and established a centralized analytics foundation for retail operations. Designed and implemented an end-to-end Azure data platform using Azure Data Lake, Databricks, PySpark, and Power BI with a Medallion Architecture (Bronze → Silver → Gold)
+A Bronze → Silver → Gold lakehouse pipeline on Azure Databricks that consolidates a fictional e-commerce company's scattered order, shipment, return, and customer data into a single analytics-ready warehouse feeding a Power BI dashboard.
 
-# Project Overview & Scope of Work
+## Problem Statement
 
-The objective of the project was to centralize business data, automate daily processing pipelines, and provide analytics-ready datasets for reporting and decision-making.
+ShopVista's order, shipment, return, and dimension data (customers, products, categories, brands, dates) lived in disconnected files and systems. That meant manual reconciliation before every report, delayed visibility into sales and returns, and no single source of truth for the business. This project designs and builds the platform that fixes that: automated ingestion, enforced data quality, and a star-schema warehouse ready for BI consumption.
 
-Key Objectives
+## Architecture
 
-✔ Build a unified data architecture for orders, shipments, returns, and dimension datasets
+![Pipeline Architecture](../architecture/pipeline_architecture.png)
 
-✔ Automate ingestion, transformation, and aggregation processes
-
-✔ Implement Bronze → Silver → Gold Medallion Architecture
-
-✔ Deliver clean and reliable datasets for analytics
-
-✔ Enable business reporting through interactive Power BI dashboards
-
-✔ Create a scalable foundation for future data growth
-
-
-Doc : [shopvista_scope_of_work.pdf](https://github.com/user-attachments/files/28826049/shopvista_scope_of_work.pdf)
-
-
----
-
-
-
-# Business Challenges
-
-Before implementation, business teams faced several operational and reporting issues:
-
-Data was spread across multiple systems and files
-Reporting required manual consolidation and reconciliation
-Data quality issues impacted trust in reports
-Limited visibility into sales and customer performance
-Reporting cycles were slow and resource-intensive
-
-These challenges created delays in decision-making and restricted business visibility.
-
-
----
-
-
-
-
-# Pipeline Architecture 
-
-<img width="8107" height="3420" alt="Image" src="https://github.com/user-attachments/assets/7471c7fd-1432-4dd6-949b-4c95ce535d37" />
-
-Azure-based Medallion Architecture (Bronze → Silver → Gold) built using ADLS Gen2, Unity Catalog, and Azure Databricks. Raw e-commerce data is centralized in Azure Data Lake, transformed through ETL/ELT pipelines, and published as analytics-ready datasets for Power BI reporting.
-
-The solution follows a modern cloud-native architecture built on Microsoft Azure.
-
-Data Flow
-
-- ShopVista Source Systems
-- Azure Data Lake Storage Gen2 (Raw Data Storage)
-- Azure Databricks + Unity Catalog
-- Bronze Layer (Raw Data)
-- Silver Layer (Cleaned & Standardized Data)
-- Gold Layer (Business Ready Data Models)
-- Power BI Reporting Layer
-
-This architecture provides scalability, governance, automation, and high-performance analytics.
-
----
-
-# Project Outcomes
-
-Business Impact --
-
-✔ Eliminated manual data consolidation
-
-✔ Reduced reporting turnaround time
-
-✔ Established a centralized source of truth
-
-✔ Improved reporting accuracy
-
-✔ Enabled faster business decision-making
-
-✔ Built a scalable cloud data platform for future growth
-
-The ShopVista Retail Intelligence Platform demonstrates how modern cloud technologies can transform fragmented operational data into a reliable and scalable analytics ecosystem
-
-
-
-
----
-
+Raw CSVs land in Azure Data Lake Storage Gen2, get picked up by Databricks Auto Loader, and move through three governed layers under Unity Catalog before reaching Power BI.
 
 ## Tech Stack
 
-- Azure Data Lake Storage Gen2
-- Azure Databricks
-- Unity Catalog
-- PySpark
-- Delta Tables
-- Databricks Workflows
-- SQL Warehouse
-- Power BI Desktop
+| Layer | Technology | Purpose |
+|---|---|---|
+| Storage | Azure Data Lake Storage Gen2 (ADLS) | Centralized landing zone for raw files |
+| Compute / ETL | Azure Databricks (PySpark, Structured Streaming) | Ingestion, transformation, aggregation |
+| Governance | Unity Catalog | Catalog/schema access control, external volumes |
+| Table format | Delta Lake | ACID transactions, merge/upsert, change data feed |
+| Ingestion | Auto Loader (`cloudFiles`) | Incremental, schema-evolving file ingestion |
+| BI | Power BI | Sales, revenue, and returns dashboards |
+
+## Data Flow
+
+1. **Landing** — Raw CSVs (order items, shipments, returns, plus dimension files for customers, products, categories, brands, dates) arrive in an ADLS container, organized by entity.
+2. **Bronze** — Auto Loader streams each file into an append-only Delta table per entity, tagging every row with its source file path and ingestion timestamp. Nothing is cleaned here — Bronze is a faithful copy of what arrived.
+3. **Silver** — Each Bronze table is deduplicated, type-cast, and standardized: string-encoded numerics get their units stripped (`"305g"` → `305`), inconsistent decimal separators are fixed, spelling anomalies in categorical fields are corrected against a lookup table, negative values are normalized, and nulls are handled explicitly (dropped for identifiers, filled for optional fields).
+4. **Gold** — Silver tables are joined and enriched into star-schema fact and dimension tables: products are joined to brands and categories, customers are mapped to region via a country→state→region lookup, and the order-items fact table is enriched with calculated fields (gross amount, discount amount, net amount, coupon flag) using Delta's change data feed to process only inserts/updates. A rolling 30-day daily summary table sits on top for fast dashboard queries.
+5. **Serving** — Power BI connects directly to the Gold layer for sales, revenue trend, and returns reporting.
+
+## Key Engineering Decisions
+
+- **Auto Loader + `trigger(availableNow=True)`** instead of a fully continuous stream — this is a daily-batch workload, not a low-latency one, so incremental batch processing gives the reliability of streaming (checkpointing, exactly-once semantics) without paying for always-on compute.
+- **Change Data Feed on the Silver→Gold hop** for the fact table, so Gold only reprocesses actual inserts/updates from Silver instead of rescanning the whole table on every run.
+- **MERGE (upsert) into Gold and Silver**, keyed on natural composite keys (`order_id + item_seq`), so re-running a load is idempotent instead of creating duplicates.
+- **Medallion architecture with Unity Catalog schemas per layer** (`bronze` / `silver` / `gold`) rather than separate catalogs, so access policies and lineage stay simple to reason about.
+- **Rolling 30-day summary table with merge-on-date** — recomputing the full history on every run doesn't scale, so the daily summary job only touches the last 30 days and merges by `date_id + currency`.
+
+## Good to Know
+
+**What I actually built**
+- The full Bronze → Silver → Gold pipeline for all fact and dimension entities, using Auto Loader, Structured Streaming with `foreachBatch` upserts, and Delta MERGE.
+- Data quality logic: null handling, deduplication, unit/format normalization, categorical standardization, negative-value correction.
+- Star-schema Gold tables (products joined to brand/category, customers joined to region) and a rolling daily summary aggregate table.
+- Unity Catalog setup: catalog, schemas, and an external volume backed by ADLS.
+
+**What I understand but didn't implement here**
+- *Row-level/column-level security in Unity Catalog:* "I'd apply row filters and column masks at the Unity Catalog table level so different business units only see the regions or fields they're cleared for, without duplicating tables."
+- *CI/CD for notebook deployment:* "I'd use Databricks Asset Bundles with a GitHub Actions pipeline to promote notebooks from dev to prod workspaces instead of manually running them."
+- *Data quality alerting:* "I'd wire up expectations (e.g., via Delta Live Tables or a custom check step) that fail the job or fire a Slack alert when null rates or row counts drift outside expected bounds, rather than relying on manual spot checks."
+- *Full historical backfill automation:* "For a production system I'd parameterize the ingestion notebooks to backfill any date range on demand, rather than relying on `includeExistingFiles` picking up whatever's currently in the landing zone."
+
+## Dashboard
+
+![ShopVista Retail Intelligence Dashboard](../dashboard/ShopVista_dashboard.png)
+
+Power BI dashboard surfacing total sales, repeat customer rate, sales by brand/category, customer distribution by region, channel split, and monthly revenue trend.
 
- 
- ---
-
-
-# Azure Resource 
-
-
-<img width="1641" height="670" alt="Image" src="https://github.com/user-attachments/assets/82e0b19e-f62c-49a5-bbe0-7fce665bf485" />
-
-
-All cloud resources required for the project were provisioned and managed within a centralized Azure Resource Group.
-The resource group acts as the operational boundary for managing infrastructure components including:
-
-Azure Databricks Workspace
-Azure Data Lake Storage Account
-Access Connectors
-Monitoring Components
-Supporting Azure Services
-
-
-
----
-
-
-
-# Azure Data Lake (Raw Layer)
-
-
-
-<img width="637" height="659" alt="Image" src="https://github.com/user-attachments/assets/55ca40cf-0640-41b4-a80d-d15c4bbe424e" />
-
-Azure Data Lake Storage Gen2 serves as the centralized repository for all incoming source data.
-
-Raw datasets are stored without modification to preserve historical records and maintain data lineage.
-
-Datasets Ingested
-Customers
-Products
-Categories
-Brands
-Orders
-Order Items
-Shipments
-Returns
-Date Dimension
-
-This layer acts as the foundation of the Medallion Architecture
-
-
-
-
----
-
-
-# Storage Account 
-
-<img width="1623" height="599" alt="Image" src="https://github.com/user-attachments/assets/9e540a8b-af33-40d0-b881-1ff58ab66fb7" />
-
-
-
-The Azure Storage Account provides secure and scalable storage for all project datasets.
-
-Features implemented include:
-
-Hierarchical Namespace
-Secure Data Access
-Centralized File Management
-Data Lake Integration
-High Availability Storage
-
-The storage account serves as the persistent storage layer powering the analytics platform.
-
-
---- 
-
-# SQL Warehouse 
-<img width="1918" height="850" alt="Image" src="https://github.com/user-attachments/assets/67089996-52ff-4ffe-b22f-b842699cb47c" />
-
-
-A Databricks SQL Warehouse was configured to provide high-performance querying capabilities for analytical workloads.
-
-The warehouse enables:
-
-Interactive SQL Analysis
-Data Exploration
-Business Queries
-Power BI Connectivity
-Reporting Layer Optimization
-
-This provides a bridge between engineering workloads and business intelligence consumption.
-
----
-
-
-# Medallion Architecture - Data Layers [Bronze & Silver]
-<img width="6000" height="3375" alt="Image" src="https://github.com/user-attachments/assets/0ae52826-7ef8-4a78-afb0-991bee31ec81" />
-
-
-The Bronze and Silver layers form the core data engineering foundation.
-
-Bronze Layer --
-
-The Bronze layer stores raw ingested datasets directly from source systems.
-
-Objectives:
-
-Preserve source data
-Maintain ingestion history
-Enable auditability
-Support replay and recovery
-Bronze Tables
-brz_customers
-brz_products
-brz_category
-brz_brands
-brz_order_items
-brz_calendar
-
-
-Silver Layer --
-
-The Silver layer focuses on data quality and standardization.
-
-Transformations include:
-
-Schema enforcement
-Data cleansing
-Null handling
-Duplicate removal
-Standardization
-Referential integrity validation
-Silver Tables
-slv_customers
-slv_products
-slv_category
-slv_brands
-slv_order_items
-slv_calendar
-
-This layer ensures business-ready consistency across datasets.
-
-
----
-
-# Medallion Architecture - Gold Data Layer
-
-<img width="6000" height="3375" alt="Image" src="https://github.com/user-attachments/assets/48fe2fcb-97b3-4eb8-9bea-929a5326df6e" />
-
-The Gold layer contains curated datasets optimized for analytics and reporting.
-
-Business entities are integrated and modeled into analytical structures suitable for consumption by Power BI and business users.
-
-Gold Tables
-
-Dimension Tables
-
-gld_dim_customers
-gld_dim_products
-gld_dim_date
-
-Fact Tables
-
-gld_fact_order_items
-gld_fact_daily_orders_summary
-
-The Gold layer serves as the single source of truth for business reporting and analytics
-
----
-
-# Job Orchestration & Automation
-# Daily Refresh Pipeline
-
-<img width="6000" height="3375" alt="Image" src="https://github.com/user-attachments/assets/3395b324-552c-4533-9639-9e0adb2e1d83" />
-
-Databricks Workflows were implemented to automate end-to-end pipeline execution.
-
-Automated Workflows
-
-Dimension Pipeline
-
-Bronze → Silver → Gold
-
-Fact Pipeline
-
-Bronze → Silver → Gold → Daily Summary
-
-Benefits
-
-✔ Automated daily refresh
-
-✔ Reduced manual intervention
-
-✔ Improved reliability
-
-✔ Consistent reporting datasets
-
-This orchestration framework enables repeatable and production-ready data operation.
-
----
-
-# Analytics & Report
-
-<img width="4150" height="2400" alt="Image" src="https://github.com/user-attachments/assets/f4ac2c1b-a7d1-4970-8b13-7ccd03231aa4" />
-
-The final reporting layer was developed using Power BI and connected directly to the Gold Layer datasets.
-
-Business KPIs
-Total Sales
-Units Sold
-Total Customers
-Repeat Customer Rate
-Average Discount
-High-Profit Region
-Analytical Insights
-Customer Distribution by Region
-Revenue Trends by Month
-Sales Performance by Channel
-Brand Performance Analysis
-Category Performance Analysis
-
-The dashboard enables stakeholders to monitor business performance and make data-driven decisions through a centralized reporting experience.
-
----
 
