@@ -32,7 +32,12 @@ Raw CSVs land in Azure Data Lake Storage Gen2, get picked up by Databricks Auto 
 5. **Serving** — Power BI connects directly to the Gold layer for sales, revenue trend, and returns reporting.
 
  
-<img width="1616" height="973" alt="Image" src="https://github.com/user-attachments/assets/7d81b27c-6006-4fa3-9ae4-cab170043d1d" /> 
+<img width="1448" height="1086" alt="Image" src="https://github.com/user-attachments/assets/d2ae7407-48ab-4153-b764-d39f3637c411" />
+
+---
+
+
+<img width="1254" height="1254" alt="Image" src="https://github.com/user-attachments/assets/85b0ea55-9f84-44ad-987c-e94b270fb295" />
 
 ## Key Engineering Decisions
 
