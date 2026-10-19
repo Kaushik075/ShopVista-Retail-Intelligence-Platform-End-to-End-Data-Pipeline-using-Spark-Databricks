@@ -2,6 +2,8 @@
 
 A Bronze → Silver → Gold lakehouse pipeline on Azure Databricks that consolidates a fictional e-commerce company's scattered order, shipment, return, and customer data into a single analytics-ready warehouse feeding a Power BI dashboard.
 
+> **Attribution:** This project is based on a scenario from the [Codebasics Data Engineering Bootcamp](https://codebasics.io). I built and ran it end to end in my own Azure Databricks and ADLS Gen2 environment.
+
 ## Problem Statement
 
 ShopVista's order, shipment, return, and dimension data (customers, products, categories, brands, dates) lived in disconnected files and systems. That meant manual reconciliation before every report, delayed visibility into sales and returns, and no single source of truth for the business. This project designs and builds the platform that fixes that: automated ingestion, enforced data quality, and a star-schema warehouse ready for BI consumption.
